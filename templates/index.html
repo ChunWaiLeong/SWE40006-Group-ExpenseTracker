@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }}</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+        }
+
+        input, select, button {
+            padding: 10px;
+            margin: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }
+
+        .total {
+            margin-top: 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .environment {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <h1>{{ app_name }}</h1>
+
+    <p class="environment">
+        Environment: {{ app_env }}
+    </p>
+
+    <form action="/add" method="POST">
+        <input
+            type="text"
+            name="description"
+            placeholder="Description"
+            required
+        >
+
+        <input
+            type="number"
+            name="amount"
+            step="0.01"
+            min="0"
+            placeholder="Amount"
+            required
+        >
+
+        <select name="category">
+            <option>Food</option>
+            <option>Transport</option>
+            <option>Shopping</option>
+            <option>Entertainment</option>
+            <option>Other</option>
+        </select>
+
+        <button type="submit">Add Expense</button>
+    </form>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Description</th>
+            <th>Category</th>
+            <th>Amount</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        {% for expense in expenses %}
+        <tr>
+            <td>{{ expense.description }}</td>
+            <td>{{ expense.category }}</td>
+            <td>${{ "%.2f"|format(expense.amount) }}</td>
+
+            <td>
+                <form
+                    action="/delete/{{ loop.index0 }}"
+                    method="POST"
+                >
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="total">
+        Total Expenses: ${{ "%.2f"|format(total) }}
+    </div>
+
+</div>
+</body>
+</html>
