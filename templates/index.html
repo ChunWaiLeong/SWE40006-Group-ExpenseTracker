@@ -106,7 +106,7 @@
 
             <td>
                 <form
-                    action="/delete/{{ loop.index0 }}"
+                    action="{{ url_for('delete_expense', expense_id=expense.id) }}"
                     method="POST"
                 >
                     <button type="submit">Delete</button>
