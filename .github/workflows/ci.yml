@@ -13,6 +13,25 @@ jobs:
     name: Run Automated Tests
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: expense_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: expense_tracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U expense_user -d expense_tracker_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://expense_user:test_password@localhost:5432/expense_tracker_test
+      APP_ENV: testing
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,6 +48,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+
+      - name: Apply database migrations
+        run: flask --app app db upgrade
 
       - name: Run automated tests
         run: python -m pytest -v

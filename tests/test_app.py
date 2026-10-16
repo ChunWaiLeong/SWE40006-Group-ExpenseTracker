@@ -1,15 +1,23 @@
 
-import pytest
+from decimal import Decimal
 
+import pytest
 import app as expense_app
 
 
 @pytest.fixture(autouse=True)
 def reset_expenses():
-    """Start every test with an empty expense list."""
-    expense_app.expenses.clear()
+    """Ensure every test starts with an empty expenses table."""
+    with expense_app.app.app_context():
+        expense_app.db.session.query(expense_app.Expense).delete()
+        expense_app.db.session.commit()
+
     yield
-    expense_app.expenses.clear()
+
+    with expense_app.app.app_context():
+        expense_app.db.session.remove()
+        expense_app.db.session.query(expense_app.Expense).delete()
+        expense_app.db.session.commit()
 
 
 @pytest.fixture
@@ -19,6 +27,29 @@ def client():
 
     with expense_app.app.test_client() as client:
         yield client
+
+
+def create_expense(description, amount, category):
+    """Insert an expense into the test database."""
+    with expense_app.app.app_context():
+        expense = expense_app.Expense(
+            description=description,
+            amount=Decimal(str(amount)),
+            category=category,
+        )
+        expense_app.db.session.add(expense)
+        expense_app.db.session.commit()
+        return expense.id
+
+
+def get_expenses():
+    """Retrieve all expenses from the test database."""
+    with expense_app.app.app_context():
+        return expense_app.db.session.execute(
+            expense_app.db.select(expense_app.Expense).order_by(
+                expense_app.Expense.id
+            )
+        ).scalars().all()
 
 
 def test_home_page_loads(client):
@@ -47,12 +78,12 @@ def test_add_expense(client):
     )
 
     assert response.status_code == 302
-    assert len(expense_app.expenses) == 1
-    assert expense_app.expenses[0] == {
-        "description": "Lunch",
-        "amount": 15.50,
-        "category": "Food",
-    }
+
+    expenses = get_expenses()
+    assert len(expenses) == 1
+    assert expenses[0].description == "Lunch"
+    assert expenses[0].amount == Decimal("15.50")
+    assert expenses[0].category == "Food"
 
 
 def test_added_expense_appears_on_home_page(client):
@@ -99,60 +130,41 @@ def test_total_calculates_multiple_expenses(client):
 
 
 def test_delete_expense(client):
-    expense_app.expenses.extend([
-        {
-            "description": "Lunch",
-            "amount": 12.50,
-            "category": "Food",
-        },
-        {
-            "description": "Bus",
-            "amount": 3.50,
-            "category": "Transport",
-        },
-    ])
+    lunch_id = create_expense("Lunch", "12.50", "Food")
+    create_expense("Bus", "3.50", "Transport")
 
-    response = client.post("/delete/0")
+    response = client.post(f"/delete/{lunch_id}")
 
     assert response.status_code == 302
-    assert len(expense_app.expenses) == 1
-    assert expense_app.expenses[0]["description"] == "Bus"
+
+    expenses = get_expenses()
+    assert len(expenses) == 1
+    assert expenses[0].description == "Bus"
 
 
 def test_total_updates_after_deleting_expense(client):
-    expense_app.expenses.extend([
-        {
-            "description": "Lunch",
-            "amount": 12.50,
-            "category": "Food",
-        },
-        {
-            "description": "Bus",
-            "amount": 3.50,
-            "category": "Transport",
-        },
-    ])
+    lunch_id = create_expense("Lunch", "12.50", "Food")
+    create_expense("Bus", "3.50", "Transport")
 
-    client.post("/delete/0")
+    client.post(f"/delete/{lunch_id}")
     response = client.get("/")
 
+    assert response.status_code == 200
     assert b"Total Expenses: $3.50" in response.data
     assert b"Lunch" not in response.data
     assert b"Bus" in response.data
 
 
 def test_delete_invalid_index_does_not_change_expenses(client):
-    expense_app.expenses.append({
-        "description": "Lunch",
-        "amount": 12.50,
-        "category": "Food",
-    })
+    create_expense("Lunch", "12.50", "Food")
 
-    response = client.post("/delete/99")
+    response = client.post("/delete/999999")
 
     assert response.status_code == 302
-    assert len(expense_app.expenses) == 1
-    assert expense_app.expenses[0]["description"] == "Lunch"
+
+    expenses = get_expenses()
+    assert len(expenses) == 1
+    assert expenses[0].description == "Lunch"
 
 
 def test_add_expense_redirects_to_home_page(client):
@@ -165,4 +177,5 @@ def test_add_expense_redirects_to_home_page(client):
         },
     )
 
+    assert response.status_code == 302
     assert response.headers["Location"] == "/"
