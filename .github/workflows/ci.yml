@@ -49,9 +49,29 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      
+      - name: Apply database migrations
+        run: flask --app app db upgrade
 
-      - name: Run automated tests
-        run: python -m pytest -v
+      - name: Run automated tests and generate reports
+        run: |
+          python -m pytest -v \
+            --junitxml=test-results.xml \
+            --cov=app \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-and-coverage-reports
+          path: |
+            test-results.xml
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
 
   docker-build:
     name: Build Docker Image
