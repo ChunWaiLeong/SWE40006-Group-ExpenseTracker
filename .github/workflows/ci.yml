@@ -102,11 +102,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-        
       - name: Debug GitHub OIDC claims
-        env:
-          GH_TOKEN_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          GH_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
         run: |
           python - <<'PY'
           import os
@@ -115,9 +111,10 @@ jobs:
           import urllib.parse
           import urllib.request
 
-          url = os.environ["GH_TOKEN_URL"]
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+
           separator = "&" if "?" in url else "?"
-          url += separator + urllib.parse.urlencode({
+          url = url + separator + urllib.parse.urlencode({
               "audience": "sts.amazonaws.com"
           })
 
@@ -125,7 +122,7 @@ jobs:
               url,
               headers={
                   "Authorization": "Bearer " +
-                  os.environ["GH_TOKEN_REQUEST_TOKEN"]
+                  os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
               }
           )
 
@@ -139,8 +136,9 @@ jobs:
               base64.urlsafe_b64decode(payload)
           )
 
-          for key in ("iss", "aud", "sub"):
-              print(f"{key}: {claims.get(key)}")
+          print("Issuer:", claims.get("iss"))
+          print("Audience:", claims.get("aud"))
+          print("Subject:", claims.get("sub"))
           PY
 
       - name: Configure AWS credentials
