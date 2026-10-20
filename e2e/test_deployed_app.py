@@ -3,9 +3,11 @@
 These drive a real browser against a deployed environment, unlike the
 tests in tests/ which call the app in memory with no server running.
 
-Target environment is set with the BASE_URL environment variable.
+Target environment is set with the BASE_URL and EXPECTED_ENV environment
+variables. Both default to the testing environment.
 """
 
+import importlib.metadata as metadata
 import os
 import time
 import uuid
@@ -14,13 +16,22 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("BASE_URL", "http://3.104.55.176").rstrip("/")
-EXPECTED_ENV = os.environ.get("EXPECTED_ENV", "")
+EXPECTED_ENV = os.environ.get("EXPECTED_ENV", "testing")
+
+REQUIREMENTS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "requirements-e2e.txt",
+)
 
 
 def read_total(page):
     """Pull the number out of 'Total Expenses: $16.00'."""
     text = page.locator(".total").inner_text()
     return float(text.split("$")[1].strip())
+
+
+def row_for(page, description):
+    return page.locator("tr").filter(has_text=description)
 
 
 def add_expense(page, description, amount, category="Food"):
@@ -34,9 +45,22 @@ def add_expense(page, description, amount, category="Food"):
 
 def delete_expense(page, description):
     page.goto(BASE_URL + "/")
-    row = page.locator("tr").filter(has_text=description)
+    row = row_for(page, description)
     row.locator("button:has-text('Delete')").click()
     page.wait_for_load_state()
+
+
+def cleanup(page, description):
+    """Remove the row if it is still there. Never raises.
+
+    Runs in a finally block, so it must not mask the real failure.
+    """
+    try:
+        page.goto(BASE_URL + "/")
+        if row_for(page, description).count() > 0:
+            delete_expense(page, description)
+    except Exception as error:
+        print("cleanup of %s failed: %s" % (description, error))
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -70,6 +94,31 @@ def description():
     return "e2e-" + uuid.uuid4().hex[:8]
 
 
+def test_required_dependencies_are_installed():
+    """requirements-e2e.txt must be enough to run this suite on its own."""
+    with open(REQUIREMENTS_FILE) as handle:
+        pins = [
+            line.strip() for line in handle
+            if line.strip() and not line.startswith("#")
+        ]
+
+    assert pins, "requirements-e2e.txt is empty"
+
+    for pin in pins:
+        name, separator, version = pin.partition("==")
+        assert separator, "%s is not pinned to an exact version" % name
+
+        installed = metadata.version(name)
+        assert installed == version, (
+            "%s is pinned to %s but %s is installed"
+            % (name, version, installed)
+        )
+
+    # Everything the suite actually imports must resolve.
+    for module in ("pytest", "playwright", "requests"):
+        __import__(module)
+
+
 def test_health_endpoint_reports_database_connected():
     response = requests.get(BASE_URL + "/health", timeout=10)
 
@@ -88,12 +137,17 @@ def test_home_page_loads(page):
 
 
 def test_environment_label_matches_expected(page):
-    if not EXPECTED_ENV:
-        pytest.skip("EXPECTED_ENV not set")
+    assert EXPECTED_ENV, (
+        "EXPECTED_ENV must be set so this validates the right environment"
+    )
 
     page.goto(BASE_URL + "/")
 
-    assert EXPECTED_ENV in page.locator(".environment").inner_text()
+    label = page.locator(".environment").inner_text()
+    assert EXPECTED_ENV in label, (
+        "%s reports '%s' but EXPECTED_ENV is '%s'"
+        % (BASE_URL, label, EXPECTED_ENV)
+    )
 
 
 def test_adding_an_expense_shows_it_and_updates_the_total(page, description):
@@ -102,10 +156,11 @@ def test_adding_an_expense_shows_it_and_updates_the_total(page, description):
 
     add_expense(page, description, "12.50", "Food")
 
-    assert page.locator("tr").filter(has_text=description).count() == 1
-    assert read_total(page) == pytest.approx(before + 12.50, abs=0.01)
-
-    delete_expense(page, description)
+    try:
+        assert row_for(page, description).count() == 1
+        assert read_total(page) == pytest.approx(before + 12.50, abs=0.01)
+    finally:
+        cleanup(page, description)
 
 
 def test_deleting_an_expense_removes_it_and_updates_the_total(page, description):
@@ -113,18 +168,22 @@ def test_deleting_an_expense_removes_it_and_updates_the_total(page, description)
     before = read_total(page)
 
     add_expense(page, description, "7.25", "Transport")
-    assert read_total(page) == pytest.approx(before + 7.25, abs=0.01)
 
-    delete_expense(page, description)
+    try:
+        assert read_total(page) == pytest.approx(before + 7.25, abs=0.01)
 
-    assert page.locator("tr").filter(has_text=description).count() == 0
-    assert read_total(page) == pytest.approx(before, abs=0.01)
+        delete_expense(page, description)
+
+        assert row_for(page, description).count() == 0
+        assert read_total(page) == pytest.approx(before, abs=0.01)
+    finally:
+        cleanup(page, description)
 
 
 def test_category_is_saved_with_the_expense(page, description):
     add_expense(page, description, "3.00", "Entertainment")
 
-    row = page.locator("tr").filter(has_text=description)
-    assert "Entertainment" in row.inner_text()
-
-    delete_expense(page, description)
+    try:
+        assert "Entertainment" in row_for(page, description).inner_text()
+    finally:
+        cleanup(page, description)
