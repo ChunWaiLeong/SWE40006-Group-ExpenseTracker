@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 app = Flask(__name__)
 
-APP_NAME = os.getenv("APP_NAME", "Expense Tracker")
+APP_NAME = os.getenv("APP_NAME", "Expense Track")
 APP_ENV = os.getenv("APP_ENV", "development")
 PORT = int(os.getenv("PORT", "5000"))
 
